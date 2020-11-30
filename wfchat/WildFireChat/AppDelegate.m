@@ -33,6 +33,8 @@
 #import <Bugly/Bugly.h>
 #import "AppService.h"
 #import "UIColor+YH.h"
+#import "SharedConversation.h"
+#import "SharePredefine.h"
 
 @interface AppDelegate () <ConnectionStatusDelegate, ReceiveMessageDelegate,
 #if WFCU_SUPPORT_VOIP
@@ -52,6 +54,8 @@
     [WFCCNetworkService sharedInstance].receiveMessageDelegate = self;
     [[WFCCNetworkService sharedInstance] setServerAddress:IM_SERVER_HOST];
     
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onFriendRequestUpdated:) name:kFriendRequestUpdated object:nil];
+    
 #if WFCU_SUPPORT_VOIP
     [[WFAVEngineKit sharedEngineKit] addIceServer:ICE_ADDRESS userName:ICE_USERNAME password:ICE_PASSWORD];
     [[WFAVEngineKit sharedEngineKit] setVideoProfile:kWFAVVideoProfile360P swapWidthHeight:YES];
@@ -67,6 +71,7 @@
     
     
     [WFCUConfigManager globalManager].appServiceProvider = [AppService sharedAppService];
+    [WFCUConfigManager globalManager].fileTransferId = FILE_TRANSFER_ID;
     
 
     NSString *savedToken = [[NSUserDefaults standardUserDefaults] stringForKey:@"savedToken"];
@@ -156,8 +161,9 @@
     WFCCUnreadCount *unreadCount = [[WFCCIMService sharedWFCIMService] getUnreadCount:@[@(Single_Type), @(Group_Type), @(Channel_Type)] lines:@[@(0)]];
     int unreadFriendRequest = [[WFCCIMService sharedWFCIMService] getUnreadFriendRequestStatus];
     [UIApplication sharedApplication].applicationIconBadgeNumber = unreadCount.unread + unreadFriendRequest;
+    
+    [self prepardDataForShareExtension];
 }
-
 
 - (void)applicationWillEnterForeground:(UIApplication *)application {
     // Called as part of the transition from the background to the active state; here you can undo many of the changes made on entering the background.
@@ -174,11 +180,144 @@
     [WFCCNetworkService stopLog];
 }
 
+- (void)prepardDataForShareExtension {
+    NSUserDefaults *sharedDefaults = [[NSUserDefaults alloc] initWithSuiteName:WFC_SHARE_APP_GROUP_ID];//此处id要与开发者中心创建时一致
+        
+    //1. 保存app cookies
+    NSData *cookiesdata = [[AppService sharedAppService] getAppServiceCookies];
+    if([cookiesdata length]) {
+        NSArray *cookies = [NSKeyedUnarchiver unarchiveObjectWithData:cookiesdata];
+        NSHTTPCookie *cookie;
+        for (cookie in cookies) {
+            [[NSHTTPCookieStorage sharedCookieStorageForGroupContainerIdentifier:WFC_SHARE_APP_GROUP_ID] setCookie:cookie];
+        }
+    } else {
+        NSArray *cookies = [[NSHTTPCookieStorage sharedCookieStorageForGroupContainerIdentifier:WFC_SHARE_APP_GROUP_ID] cookiesForURL:[NSURL URLWithString:APP_SERVER_ADDRESS]];
+        for (NSHTTPCookie *cookie in cookies) {
+            [[NSHTTPCookieStorage sharedCookieStorageForGroupContainerIdentifier:WFC_SHARE_APP_GROUP_ID] deleteCookie:cookie];
+        }
+    }
+    
+    //2. 保存会话列表
+    NSArray<WFCCConversationInfo*> *infos = [[WFCCIMService sharedWFCIMService] getConversationInfos:@[@(Single_Type), @(Group_Type), @(Channel_Type)] lines:@[@(0)]];
+    NSMutableArray<SharedConversation *> *sharedConvs = [[NSMutableArray alloc] init];
+    NSMutableArray<NSString *> *needComposedGroupIds = [[NSMutableArray alloc] init];
+    for (WFCCConversationInfo *info in infos) {
+        SharedConversation *sc = [SharedConversation from:(int)info.conversation.type target:info.conversation.target line:info.conversation.line];
+        if (info.conversation.type == Single_Type) {
+            WFCCUserInfo *userInfo = [[WFCCIMService sharedWFCIMService] getUserInfo:info.conversation.target refresh:NO];
+            if (!userInfo) {
+                continue;
+            }
+            sc.title = userInfo.friendAlias.length ? userInfo.friendAlias : userInfo.displayName;
+            sc.portraitUrl = userInfo.portrait;
+        } else if (info.conversation.type == Group_Type) {
+            WFCCGroupInfo *groupInfo = [[WFCCIMService sharedWFCIMService] getGroupInfo:info.conversation.target refresh:NO];
+            if (!groupInfo) {
+                continue;
+            }
+            sc.title = groupInfo.name;
+            sc.portraitUrl = groupInfo.portrait;
+            if (!groupInfo.portrait.length) {
+                [needComposedGroupIds addObject:info.conversation.target];
+            }
+        } else if (info.conversation.type == Channel_Type) {
+            WFCCChannelInfo *ci = [[WFCCIMService sharedWFCIMService] getChannelInfo:info.conversation.target refresh:NO];
+            if (!ci) {
+                continue;
+            }
+            sc.title = ci.name;
+            sc.portraitUrl = ci.portrait;
+        }
+        [sharedConvs addObject:sc];
+    }
+    [sharedDefaults setObject:[NSKeyedArchiver archivedDataWithRootObject:sharedConvs] forKey:WFC_SHARE_BACKUPED_CONVERSATION_LIST];
+    
+    //3. 保存群拼接头像
+    //获取分组的共享目录
+    NSURL *groupURL = [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:WFC_SHARE_APP_GROUP_ID];//此处id要与开发者中心创建时一致
+    NSURL *portraitURL = [groupURL URLByAppendingPathComponent:WFC_SHARE_BACKUPED_GROUP_GRID_PORTRAIT_PATH];
+    for (NSString *groupId in needComposedGroupIds) {
+        //获取已经拼接好的头像，如果没有拼接会返回为空
+        NSString *file = [WFCCUtilities getGroupGridPortrait:groupId width:80 generateIfNotExist:NO defaultUserPortrait:^UIImage *(NSString *userId) {
+            return nil;
+        }];
+        
+        if (file.length) {
+            NSURL *fileURL = [portraitURL URLByAppendingPathComponent:groupId];
+            [[NSData dataWithContentsOfFile:file] writeToURL:fileURL atomically:YES];
+        }
+    }
+}
+
+- (void)onFriendRequestUpdated:(NSNotification *)notification {
+    if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+        NSArray<NSString *> *newRequests = notification.object;
+        
+        if (!newRequests.count) {
+            return;
+        }
+        
+        UILocalNotification *localNote = [[UILocalNotification alloc] init];
+        if (@available(iOS 8.2, *)) {
+            localNote.alertTitle = @"收到好友邀请";
+        }
+        
+        if (newRequests.count == 1) {
+            [[WFCCIMService sharedWFCIMService] getUserInfo:newRequests[0] refresh:NO success:^(WFCCUserInfo *userInfo) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    WFCCFriendRequest *request = [[WFCCIMService sharedWFCIMService] getFriendRequest:newRequests[0] direction:1];
+                    localNote.alertBody = [NSString stringWithFormat:@"%@:%@", userInfo.displayName, request.reason];
+                    [[UIApplication sharedApplication] scheduleLocalNotification:localNote];
+                });
+                        } error:^(int errorCode) {
+                            
+                        }];
+        } else if(newRequests.count > 1) {
+            localNote.alertBody = [NSString stringWithFormat:@"您收到 %ld 条好友请求", newRequests.count];
+            [[UIApplication sharedApplication] scheduleLocalNotification:localNote];
+        }
+    }
+}
+
 - (void)onReceiveMessage:(NSArray<WFCCMessage *> *)messages hasMore:(BOOL)hasMore {
     if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
         WFCCUnreadCount *unreadCount = [[WFCCIMService sharedWFCIMService] getUnreadCount:@[@(Single_Type), @(Group_Type), @(Channel_Type)] lines:@[@(0)]];
         int count = unreadCount.unread;
         [UIApplication sharedApplication].applicationIconBadgeNumber = count;
+        
+        __block BOOL isNoDisturbing = NO;
+        [[WFCCIMService sharedWFCIMService] getNoDisturbingTimes:^(int startMins, int endMins) {
+            NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+            NSDateComponents *nowCmps = [calendar components:NSCalendarUnitHour|NSCalendarUnitMinute fromDate:[NSDate date]];
+            int nowMins = (int)(nowCmps.hour * 60 + nowCmps.minute);
+            if (endMins > startMins) {
+                if (endMins > nowMins && nowMins > startMins) {
+                    isNoDisturbing = YES;
+                }
+            } else {
+                if (endMins < nowMins || nowMins < startMins) {
+                    isNoDisturbing = YES;
+                }
+            }
+            
+        } error:^(int error_code) {
+            
+        }];
+        
+        //免打扰
+        if (isNoDisturbing) {
+            return;
+        }
+        
+        //全局静音
+        if ([[WFCCIMService sharedWFCIMService] isGlobalSlient]) {
+            return;
+        }
+        
+        BOOL pcOnline = [[WFCCIMService sharedWFCIMService] getPCOnlineInfos].count > 0;
+        BOOL muteWhenPcOnline = [[WFCCIMService sharedWFCIMService] isMuteNotificationWhenPcOnline];
+        
         
         for (WFCCMessage *msg in messages) {
             //当在后台活跃时收到新消息，需要弹出本地通知。有一种可能时客户端已经收到远程推送，然后由于voip/backgroud fetch在后台拉活了应用，此时会收到接收下来消息，因此需要避免重复通知
@@ -193,6 +332,12 @@
             int flag = (int)[msg.content.class performSelector:@selector(getContentFlags)];
             WFCCConversationInfo *info = [[WFCCIMService sharedWFCIMService] getConversationInfo:msg.conversation];
             if((flag & 0x03) && !info.isSilent && ![msg.content isKindOfClass:[WFCCCallStartMessageContent class]]) {
+
+                
+            if (msg.status != Message_Status_Mentioned && msg.status != Message_Status_AllMentioned && pcOnline && muteWhenPcOnline) {
+                continue;
+            }
+                
               UILocalNotification *localNote = [[UILocalNotification alloc] init];
               
               localNote.alertBody = [msg digest];
@@ -285,6 +430,8 @@
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"savedToken"];
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"savedUserId"];
             [[NSUserDefaults standardUserDefaults] synchronize];
+            [[AppService sharedAppService] clearAppServiceCookies];
+            
         } else if (status == kConnectionStatusLogout) {
             UIViewController *loginVC = [[WFCLoginViewController alloc] init];
             UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:loginVC];
@@ -293,6 +440,7 @@
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"savedToken"];
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"savedUserId"];
             [[NSUserDefaults standardUserDefaults] synchronize];
+            [[AppService sharedAppService] clearAppServiceCookies];
         } 
     });
 }

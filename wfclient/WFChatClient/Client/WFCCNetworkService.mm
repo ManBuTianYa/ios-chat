@@ -58,7 +58,7 @@ NSString *kChannelInfoUpdated = @"kChannelInfoUpdated";
 @end
 
 @protocol RefreshFriendRequestDelegate <NSObject>
-- (void)onFriendRequestUpdated;
+- (void)onFriendRequestUpdated:(NSArray<NSString *> *)newFriendRequests;
 @end
 
 @protocol RefreshSettingDelegate <NSObject>
@@ -212,7 +212,7 @@ class GUCB : public mars::stn::GetUserInfoCallback {
   GUCB(id<RefreshUserInfoDelegate> delegate) : m_delegate(delegate) {}
   
   void onSuccess(const std::list<mars::stn::TUserInfo> &userInfoList) {
-      if(m_delegate) {
+      if(m_delegate && !userInfoList.empty()) {
           [m_delegate onUserInfoUpdated:converUserInfos(userInfoList)];
       }
   }
@@ -267,7 +267,7 @@ public:
 class GFLCB : public mars::stn::GetMyFriendsCallback {
 public:
     GFLCB(id<RefreshFriendListDelegate> delegate) : m_delegate(delegate) {}
-    void onSuccess(std::list<std::string> friendIdList) {
+    void onSuccess(const std::list<std::string> &friendIdList) {
         if(m_delegate) {
             [m_delegate onFriendListUpdated];
         }
@@ -281,9 +281,14 @@ public:
 class GFRCB : public mars::stn::GetFriendRequestCallback {
 public:
     GFRCB(id<RefreshFriendRequestDelegate> delegate) : m_delegate(delegate) {}
-    void onSuccess(bool hasNewRequest) {
-        if(m_delegate && hasNewRequest) {
-            [m_delegate onFriendRequestUpdated];
+    void onSuccess(const std::list<std::string> &newRequests) {
+        if(m_delegate) {
+            NSMutableArray *requests = [[NSMutableArray alloc] init];
+            for (std::list<std::string>::const_iterator it = newRequests.begin(); it != newRequests.end(); ++it) {
+                NSString *r = [NSString stringWithUTF8String:it->c_str()];
+                [requests addObject:r];
+            }
+            [m_delegate onFriendRequestUpdated:requests];
         }
     }
     void onFalure(int errorCode) {
@@ -593,14 +598,19 @@ static WFCCNetworkService * sharedSingleton = nil;
       self.backgroudRunTime += 3;
       BOOL inCall = NO;
       Class cls = NSClassFromString(@"WFAVEngineKit");
+      
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundeclared-selector"
       if (cls && [cls respondsToSelector:@selector(isCallActive)] && [cls performSelector:@selector(isCallActive)]) {
           inCall = YES;
       }
+#pragma clang diagnostic pop
+      
       if ((mars::stn::GetTaskCount() > 0 && self.backgroudRunTime < 60) || (inCall && self.backgroudRunTime < 1800)) {
           [self checkBackGroundTask];
       } else {
-    mars::stn::Reset();
-    _endBgTaskTimer = [NSTimer scheduledTimerWithTimeInterval:1
+          mars::stn::ClearTasks();
+          _endBgTaskTimer = [NSTimer scheduledTimerWithTimeInterval:1
                                                        target:self
                                                      selector:@selector(endBgTask)
                                                      userInfo:nil
@@ -871,9 +881,9 @@ static WFCCNetworkService * sharedSingleton = nil;
     });
 }
 
-- (void)onFriendRequestUpdated {
+- (void)onFriendRequestUpdated:(NSArray<NSString *> *)newFriendRequests {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] postNotificationName:kFriendRequestUpdated object:nil];
+        [[NSNotificationCenter defaultCenter] postNotificationName:kFriendRequestUpdated object:newFriendRequests];
     });
 }
 

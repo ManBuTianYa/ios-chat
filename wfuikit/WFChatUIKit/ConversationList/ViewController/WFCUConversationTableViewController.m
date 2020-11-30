@@ -315,7 +315,12 @@
 }
 
 - (void)updateConnectionStatus:(ConnectionStatus)status {
+    [self updateTitle];
+}
+
+- (void)updateTitle {
     UIView *title;
+    ConnectionStatus status = [WFCCNetworkService sharedInstance].currentConnectionStatus;
     if (status != kConnectionStatusConnecting && status != kConnectionStatusReceiving) {
         UILabel *navLabel = [[UILabel alloc] initWithFrame:CGRectMake([UIScreen mainScreen].bounds.size.width/2 - 40, 0, 80, 44)];
         
@@ -326,8 +331,19 @@
             case kConnectionStatusUnconnected:
                 navLabel.text = WFCString(@"NotConnect");
                 break;
-            case kConnectionStatusConnected:
-                navLabel.text = WFCString(@"Message");
+            case kConnectionStatusConnected: {
+                int count = 0;
+                for (WFCCConversationInfo *info in self.conversations) {
+                    if (!info.isSilent) {
+                        count += info.unreadCount.unread;
+                    }
+                }
+                if (count) {
+                    navLabel.text = [NSString stringWithFormat:WFCString(@"NumberOfMessage"), count];
+                } else {
+                    navLabel.text = WFCString(@"Message");
+                }
+            }
                 break;
                 
             default:
@@ -335,7 +351,7 @@
         }
         
         navLabel.textColor = [WFCUConfigManager globalManager].naviTextColor;
-        navLabel.font = [UIFont fontWithName:@"Arial-BoldMT" size:18];
+        navLabel.font = [UIFont fontWithName:@"Helvetica-Bold" size:18];
         
         navLabel.textAlignment = NSTextAlignmentCenter;
         title = navLabel;
@@ -361,7 +377,6 @@
     }
     self.navigationItem.titleView = title;
 }
-
 - (void)onConnectionStatusChanged:(NSNotification *)notification {
     ConnectionStatus status = [notification.object intValue];
     [self updateConnectionStatus:status];
@@ -416,6 +431,7 @@
         }
     }
     [self.tabBarController.tabBar showBadgeOnItemIndex:0 badgeValue:count];
+    [self updateTitle];
 }
 
 - (void)updatePcSession {
@@ -424,6 +440,10 @@
     if (@available(iOS 11.0, *)) {
         if (onlines.count) {
             self.tableView.tableHeaderView = self.pcSessionView;
+            if (![[NSUserDefaults standardUserDefaults] boolForKey:@"wfc_uikit_had_pc_session"]) {
+                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"wfc_uikit_had_pc_session"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+            }
         } else {
             self.tableView.tableHeaderView = nil;
         }
@@ -522,7 +542,21 @@
         iv.image = [UIImage imageNamed:@"pc_session"];
         [_pcSessionView addSubview:iv];
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(68, 10, 100, 20)];
-        label.text = WFCString(@"PCLogined");
+        NSArray<WFCCPCOnlineInfo *> *infos = [[WFCCIMService sharedWFCIMService] getPCOnlineInfos];
+        if (infos.count) {
+            if (infos[0].platform == PlatformType_Windows) {
+                label.text = @"Windows 已登录";
+            } else if(infos[0].platform == PlatformType_OSX) {
+                label.text = @"Mac 已登录";
+            } else if(infos[0].platform == PlatformType_Linux) {
+                label.text = @"Linux 已登录";
+            } else if(infos[0].platform == PlatformType_WEB) {
+                label.text = @"Web 已登录";
+            } else if(infos[0].platform == PlatformType_WX) {
+                label.text = @"小程序已登录";
+            }
+        }
+        
         [_pcSessionView addSubview:label];
         _pcSessionView.userInteractionEnabled = YES;
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onTapPCBar:)];

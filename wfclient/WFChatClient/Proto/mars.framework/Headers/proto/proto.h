@@ -439,6 +439,8 @@ namespace mars{
             kUserSettingWebOnline = 12,
             kUserSettingDisableRecipt = 13,
             kUserSettingFavouriteUser = 14,
+            kUserSettingMuteWhenPCOnline = 15,
+            kUserSettingLinesReaded = 16,
 
             kUserSettingCustomBegin = 1000
         };
@@ -633,14 +635,14 @@ namespace mars{
 
         class GetMyFriendsCallback {
         public:
-            virtual void onSuccess(std::list<std::string> friendIdList) = 0;
+            virtual void onSuccess(const std::list<std::string> &friendIdList) = 0;
             virtual void onFalure(int errorCode) = 0;
             virtual ~GetMyFriendsCallback() {}
         };
 
         class GetFriendRequestCallback {
         public:
-            virtual void onSuccess(bool hasNewRequest) = 0;
+            virtual void onSuccess(const std::list<std::string> &newRequests) = 0;
             virtual void onFalure(int errorCode) = 0;
             virtual ~GetFriendRequestCallback() {}
         };
@@ -734,9 +736,11 @@ namespace mars{
 
         extern void loadRemoteLineMessages(int type, long long beforeUid, int count, LoadRemoteMessagesCallback *callback);
 
-        extern void loadConversationFileRecords(const TConversation &conv, long long beforeUid, int count, LoadFileRecordCallback *callback);
+        extern void loadConversationFileRecords(const TConversation &conv, const std::string &fromUser, long long beforeUid, int count, LoadFileRecordCallback *callback);
         extern void loadMyFileRecords(long long beforeUid, int count, LoadFileRecordCallback *callback);
         extern void deleteFileRecords(long long messageUid, GeneralOperationCallback *callback);
+        extern void searchConversationFileRecords(const std::string &keyword, const TConversation &conv, const std::string &fromUser, long long beforeUid, int count, LoadFileRecordCallback *callback);
+        extern void searchMyFileRecords(const std::string &keyword, long long beforeUid, int count, LoadFileRecordCallback *callback);
     
         extern int uploadGeneralMedia(const std::string fileName, const std::string &mediaData, int mediaType, UpdateMediaCallback *callback);
 
@@ -772,6 +776,8 @@ namespace mars{
         extern void (*modifyGroupInfo)(const std::string &groupId, int type, const std::string &newValue, const std::list<int> &notifyLines, TMessageContent &content, GeneralOperationCallback *callback);
 
         extern void (*modifyGroupAlias)(const std::string &groupId, const std::string &newAlias, const std::list<int> &notifyLines, TMessageContent &content, GeneralOperationCallback *callback);
+    
+        extern void modifyGroupMemberAlias(const std::string &groupId, const std::string &memberId, const std::string &newAlias, const std::list<int> &notifyLines, TMessageContent &content, GeneralOperationCallback *callback);
 
         extern void (*getGroupMembers)(const std::string &groupId, int64_t updateDt);
 
