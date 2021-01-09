@@ -27,7 +27,7 @@ namespace mars {
             
         public:
             static MessageDB* Instance();
-            long InsertMessage(TMessage &msg, bool updateConversationTime = true, std::list<UpdateConversationData*> *delayUpdateDatas = NULL);
+            long InsertMessage(TMessage &msg, bool updateConversationTime = true, std::list<UpdateConversationData*> *delayUpdateDatas = NULL, int remote_flag = 0);
             
             void RegisterMessageFlag(int type, int flag);
             bool UpdateMessageContent(long messageId, TMessageContent &msgConstnet);
@@ -66,6 +66,8 @@ namespace mars {
             std::list<TMessage> GetMessages(const std::list<int> &conversationTypes, const std::list<int> &lines, const std::list<int> &contentTypes, bool desc, int count, int64_t startPoint, const std::string &withUser);
             
             std::list<TMessage> GetMessagesByMessageStatus(const std::list<int> &conversationTypes, const std::list<int> &lines, const std::list<int> &messageStatus, bool desc, int count, int64_t startPoint, const std::string &withUser);
+            
+            std::list<TMessage> GetMessagesByTimes(int conversationType, const std::string &target, int line, const std::list<int> &contentTypes, bool desc, int count, int64_t startTimestamp, const std::string &withUser);
             
             std::list<TMessage> GetUserMessages(const std::string &user, int conversationType, const std::string &target, int line, const std::list<int> &contentTypes, bool desc, int count, int64_t startPoint);
             std::list<TMessage> GetUserMessages(const std::string &user, const std::list<int> &conversationTypes, const std::list<int> &lines, const std::list<int> &contentTypes, bool desc, int count, int64_t startPoint);
@@ -153,7 +155,7 @@ namespace mars {
             bool DeleteFriend(const std::string &friendUid);
             
             int unreadFriendRequest();
-            void clearUnreadFriendRequestStatus();
+            bool clearUnreadFriendRequestStatus();
             int getMessageFlag(int type);
             int64_t getUnreadFriendRequestMaxDt();
             bool updateFriendRequestStatus(const std::string &friendUid, int status);
@@ -169,8 +171,6 @@ namespace mars {
             
             long InsertRead(const TReadEntry &entry);
             long InsertDelivery(const TDeliveryEntry &entry);
-            
-            bool RemoveGroupRead(const std::string &groupId, const std::string &userId);
             
             std::map<std::string, int64_t> GetConversationRead(int conversationType, const std::string &target, int line);
             std::map<std::string, int64_t> GetDelivery(int conversationType, const std::string &target);

@@ -388,7 +388,7 @@
     } else if([UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
         WFCCPCLoginRequestMessageContent *pcLoginRequest;
         for (WFCCMessage *msg in messages) {
-            if (([[NSDate date] timeIntervalSince1970] - (msg.serverTime - [WFCCNetworkService sharedInstance].serverDeltaTime)/1000) < 90) {
+            if (([[NSDate date] timeIntervalSince1970] - (msg.serverTime - [WFCCNetworkService sharedInstance].serverDeltaTime)/1000) < 60) {
                 if ([msg.content isKindOfClass:[WFCCPCLoginRequestMessageContent class]]) {
                     pcLoginRequest = (WFCCPCLoginRequestMessageContent *)msg.content;
                 }
@@ -425,7 +425,7 @@
 - (void)onConnectionStatusChanged:(ConnectionStatus)status {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (status == kConnectionStatusRejected || status == kConnectionStatusTokenIncorrect || status == kConnectionStatusSecretKeyMismatch) {
-            [[WFCCNetworkService sharedInstance] disconnect:YES clearSession:YES];
+            [[WFCCNetworkService sharedInstance] disconnect:YES clearSession:NO];
             
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"savedToken"];
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"savedUserId"];

@@ -763,8 +763,10 @@
     
     [self registerCell:[WFCUInformationCell class] forContent:[WFCCCreateGroupNotificationContent class]];
     [self registerCell:[WFCUInformationCell class] forContent:[WFCCAddGroupeMemberNotificationContent class]];
-    [self registerCell:[WFCUInformationCell class] forContent:[WFCCKickoffGroupMemberNotificaionContent class]];
+    [self registerCell:[WFCUInformationCell class] forContent:[WFCCKickoffGroupMemberNotificationContent class]];
     [self registerCell:[WFCUInformationCell class] forContent:[WFCCQuitGroupNotificationContent class]];
+    [self registerCell:[WFCUInformationCell class] forContent:[WFCCKickoffGroupMemberVisibleNotificationContent class]];
+    [self registerCell:[WFCUInformationCell class] forContent:[WFCCQuitGroupVisibleNotificationContent class]];
     [self registerCell:[WFCUInformationCell class] forContent:[WFCCDismissGroupNotificationContent class]];
     [self registerCell:[WFCUInformationCell class] forContent:[WFCCTransferGroupOwnerNotificationContent class]];
     [self registerCell:[WFCUInformationCell class] forContent:[WFCCModifyGroupAliasNotificationContent class]];
@@ -1319,7 +1321,7 @@
             continue;
         }
         
-        if (!([message.content.class getContentFlags] & 0x1)) {
+        if (message.messageId == 0) {
             continue;
         }
         BOOL duplcated = NO;
@@ -2138,19 +2140,29 @@
 - (void)recordDidEnd:(NSString *)dataUri duration:(long)duration error:(NSError *)error {
     [self sendMessage:[WFCCSoundMessageContent soundMessageContentForWav:dataUri duration:duration]];
 }
+- (BOOL)isEqualRect:(CGRect)first second:(CGRect)second {
+    return first.origin.x == second.origin.x
+       && first.origin.y == second.origin.y
+       && first.size.width == second.size.width
+       && first.size.height == second.size.height;
+}
 
 - (void)willChangeFrame:(CGRect)newFrame withDuration:(CGFloat)duration keyboardShowing:(BOOL)keyboardShowing {
     if (!self.isShowingKeyboard) {
+        CGRect frame = self.collectionView.frame;
+        CGFloat diff = MIN(frame.size.height, self.collectionView.contentSize.height) - newFrame.origin.y;
+        if(diff > 0) {
+            frame.origin.y = -diff;
+        } else {
+            frame = CGRectMake(0, 0, self.backgroundView.bounds.size.width, newFrame.origin.y);
+        }
+        if([self isEqualRect:frame second:self.collectionView.frame]) {
+            return;
+        }
+        
         self.isShowingKeyboard = YES;
         [UIView animateWithDuration:duration animations:^{
-            CGRect frame = self.collectionView.frame;
-            CGFloat diff = MIN(frame.size.height, self.collectionView.contentSize.height) - newFrame.origin.y;
-            if(diff > 0) {
-                frame.origin.y = -diff;
-                self.collectionView.frame = frame;
-            } else {
-                self.collectionView.frame = CGRectMake(0, 0, self.backgroundView.bounds.size.width, newFrame.origin.y);
-            }
+            self.collectionView.frame = frame;
         } completion:^(BOOL finished) {
             self.collectionView.frame = CGRectMake(0, 0, self.backgroundView.bounds.size.width, newFrame.origin.y);
             

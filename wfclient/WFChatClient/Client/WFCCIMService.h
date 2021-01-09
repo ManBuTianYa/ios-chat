@@ -314,11 +314,11 @@ typedef NS_ENUM(NSInteger, WFCCPlatformType) {
 - (WFCCUnreadCount *)getUnreadCount:(WFCCConversation *)conversation;
 
 /**
- 清空会话未读数。仅清理本地消息的未读数，没有同步到其他端，如果多端使用，请避免使用此方法
+ 清空会话未读数。
  
  @param conversation 会话
  */
-- (void)clearUnreadStatus:(WFCCConversation *)conversation DEPRECATED_MSG_ATTRIBUTE("use clearUnreadStatus:lines: instead");
+- (void)clearUnreadStatus:(WFCCConversation *)conversation;
 
 /**
 清空会话未读数
@@ -330,9 +330,9 @@ typedef NS_ENUM(NSInteger, WFCCPlatformType) {
                               lines:(NSArray<NSNumber *> *)lines;
 
 /**
- 清空所有会话的未读数
+ 清空所有会话的未读数。仅清理本地消息的未读数，没有同步到其他端，如果多端使用，请避免使用此方法
  */
-- (void)clearAllUnreadStatus;
+- (void)clearAllUnreadStatus DEPRECATED_MSG_ATTRIBUTE("use clearUnreadStatus:lines: instead");
 
 /**
  设置媒体消息已播放（已经放开限制，所有消息都可以设置为已读状态）
@@ -422,6 +422,22 @@ typedef NS_ENUM(NSInteger, WFCCPlatformType) {
                                   lines:(NSArray<NSNumber *> *)lines
                           messageStatus:(NSArray<NSNumber *> *)messageStatus
                                    from:(NSUInteger)fromIndex
+                                  count:(NSInteger)count
+                               withUser:(NSString *)user;
+
+/**
+ 获取消息
+ @discuss 获取从fromTime起count条旧的消息。如果想要获取比fromIndex新的消息，count传负值。
+ 
+ @param conversation 会话
+ @param contentTypes 消息类型
+ @param fromTime 起始index
+ @param count 总数
+ @return 消息实体
+ */
+- (NSArray<WFCCMessage *> *)getMessages:(WFCCConversation *)conversation
+                           contentTypes:(NSArray<NSNumber *> *)contentTypes
+                               fromTime:(NSUInteger)fromTime
                                   count:(NSInteger)count
                                withUser:(NSString *)user;
 
